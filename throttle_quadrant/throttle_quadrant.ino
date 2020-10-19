@@ -1,5 +1,5 @@
 /////////////////////
-//// Version 1.3 ////
+//// Version 1.4 ////
 /////////////////////
 
 #include <Joystick.h>
@@ -15,6 +15,7 @@
 
 //// Encoder pause
 #define ENCODER_BUTTON_PRESS_TIME 27
+#define SWITCH_BUTTON_PRESS_TIME 50
 
 //// Pins
 #define PLOAD_PIN 13  // Connects to Parallel load pin the 165
@@ -78,7 +79,16 @@ struct Button {
   short buttonMode;
 };
 
-#define JOY1_BUTTONS_NUM 21
+struct TwoWaySwitchButton {
+  int bitNum;
+  int logicalButtonNum;
+  short buttonMode;
+  bool active;
+  unsigned int activation;
+  bool lastState;
+};
+
+#define JOY1_BUTTONS_NUM 19
 
 Button joy1Buttons[JOY1_BUTTONS_NUM] = {
   {2, 10, BUTTON_MODE_BOTH},
@@ -94,8 +104,8 @@ Button joy1Buttons[JOY1_BUTTONS_NUM] = {
   {13, 20, BUTTON_MODE_1},
   {14, 21, BUTTON_MODE_BOTH},
   {15, 22, BUTTON_MODE_BOTH},
-  {25, 23, BUTTON_MODE_BOTH},
-  {24, 24, BUTTON_MODE_BOTH},
+  //  {25, 23, BUTTON_MODE_BOTH},
+  //  {24, 24, BUTTON_MODE_BOTH},
   {27, 25, BUTTON_MODE_1},
   {26, 26, BUTTON_MODE_1},
   {19, 27, BUTTON_MODE_1},
@@ -104,13 +114,20 @@ Button joy1Buttons[JOY1_BUTTONS_NUM] = {
   {17, 30, BUTTON_MODE_BOTH},
 };
 
-#define JOY2_BUTTONS_NUM 12
+#define JOY1_SWITCH_BUTTONS_NUM 2
+
+TwoWaySwitchButton joy1SwitchButtons[JOY1_SWITCH_BUTTONS_NUM] = {
+  {25, 23, BUTTON_MODE_BOTH},
+  {24, 24, BUTTON_MODE_BOTH},
+};
+
+#define JOY2_BUTTONS_NUM 8
 
 Button joy2Buttons[JOY2_BUTTONS_NUM] = {
-  {10, 8, BUTTON_MODE_BOTH},
-  {11, 9, BUTTON_MODE_BOTH},
-  {8, 10, BUTTON_MODE_BOTH},
-  {9, 11, BUTTON_MODE_BOTH},
+  //  {10, 8, BUTTON_MODE_BOTH},
+  //  {11, 9, BUTTON_MODE_BOTH},
+  //  {8, 10, BUTTON_MODE_BOTH},
+  //  {9, 11, BUTTON_MODE_BOTH},
   {7, 12, BUTTON_MODE_2},
   {16, 13, BUTTON_MODE_2},
   {12, 14, BUTTON_MODE_2},
@@ -119,6 +136,15 @@ Button joy2Buttons[JOY2_BUTTONS_NUM] = {
   {26, 17, BUTTON_MODE_2},
   {19, 18, BUTTON_MODE_2},
   {18, 19, BUTTON_MODE_2},
+};
+
+#define JOY2_SWITCH_BUTTONS_NUM 4
+
+TwoWaySwitchButton joy2SwitchButtons[JOY2_SWITCH_BUTTONS_NUM] = {
+  {10, 8, BUTTON_MODE_BOTH},
+  {11, 9, BUTTON_MODE_BOTH},
+  {8, 10, BUTTON_MODE_BOTH},
+  {9, 11, BUTTON_MODE_BOTH},
 };
 
 volatile boolean state0;
@@ -328,6 +354,7 @@ void loop()
   // processButtons();
   processPots();
   deactivateEncoderButtons();
+  deactivateEncoderSwitchButtons();
 
   // Joystick1.sendState();
   // Joystick2.sendState();
@@ -341,6 +368,33 @@ void processButtons() {
   for (int i = 0; i < JOY2_BUTTONS_NUM; i++) {
     int state = ((currentButtonMode & joy2Buttons[i].buttonMode) == currentButtonMode) && ((pinValues >> joy2Buttons[i].bitNum) & 1);
     Joystick2.setButton(joy2Buttons[i].logicalButtonNum, state);
+  }
+
+  for (int i = 0; i < JOY1_SWITCH_BUTTONS_NUM; i++) {
+    int state = ((currentButtonMode & joy1SwitchButtons[i].buttonMode) == currentButtonMode) && ((pinValues >> joy1SwitchButtons[i].bitNum) & 1);
+    if (state) {
+      if (!joy1SwitchButtons[i].lastState) {
+        Joystick1.setButton(joy1SwitchButtons[i].logicalButtonNum, state);
+        joy1SwitchButtons[i].active = true;
+        joy1SwitchButtons[i].activation = (unsigned int) millis();
+        joy1SwitchButtons[i].lastState = true;
+      }
+    } else {
+      joy1SwitchButtons[i].lastState = false;
+    }
+  }
+  for (int i = 0; i < JOY2_SWITCH_BUTTONS_NUM; i++) {
+    int state = ((currentButtonMode & joy2SwitchButtons[i].buttonMode) == currentButtonMode) && ((pinValues >> joy2SwitchButtons[i].bitNum) & 1);
+    if (state) {
+      if (!joy2SwitchButtons[i].lastState) {
+        Joystick2.setButton(joy2SwitchButtons[i].logicalButtonNum, state);
+        joy2SwitchButtons[i].active = true;
+        joy2SwitchButtons[i].activation = (unsigned int) millis();
+        joy2SwitchButtons[i].lastState = true;
+      }
+    } else {
+      joy2SwitchButtons[i].lastState = false;
+    }
   }
 }
 
@@ -510,6 +564,21 @@ void deactivateEncoderButtons() {
     if (encoderButtons[i].joy2Active && (unsigned int) millis() - encoderButtons[i].joy2Activation >= ENCODER_BUTTON_PRESS_TIME) {
       Joystick2.setButton(encoderButtons[i].joy2Button, 0);
       encoderButtons[i].joy2Active = false;
+    }
+  }
+}
+
+void deactivateEncoderSwitchButtons() {
+  for (int i = 0; i < JOY1_SWITCH_BUTTONS_NUM; i++) {
+    if (joy1SwitchButtons[i].active && (unsigned int) millis() - joy1SwitchButtons[i].activation >= SWITCH_BUTTON_PRESS_TIME) {
+      Joystick1.setButton(joy1SwitchButtons[i].logicalButtonNum, 0);
+      joy1SwitchButtons[i].active = false;
+    }
+  }
+  for (int i = 0; i < JOY2_SWITCH_BUTTONS_NUM; i++) {
+    if (joy2SwitchButtons[i].active && (unsigned int) millis() - joy2SwitchButtons[i].activation >= SWITCH_BUTTON_PRESS_TIME) {
+      Joystick2.setButton(joy2SwitchButtons[i].logicalButtonNum, 0);
+      joy2SwitchButtons[i].active = false;
     }
   }
 }
