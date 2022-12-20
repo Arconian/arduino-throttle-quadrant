@@ -5,7 +5,7 @@
 #include <Joystick.h>
 
 //// Debouncing
-#define DEBOUNCE_ITERATIONS 5
+#define DEBOUNCE_ITERATIONS 3
 
 //// Shift reg data
 #define NUMBER_OF_SHIFT_CHIPS   4
