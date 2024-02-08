@@ -4,6 +4,7 @@
 
 #include <Joystick.h>
 #include <MIDIUSB.h>
+#include <Vector.h>
 
 //// Debouncing
 #define DEBOUNCE_ITERATIONS 3
@@ -17,11 +18,12 @@
 #define ENCODERS_NUM 5
 #define TWO_POSITION_SWITCHES_NUM 3
 
-//// Encoder pause
+//// Encoder settings
 #define ENCODER_BUTTON_PRESS_TIME 27
 #define SWITCH_BUTTON_PRESS_TIME 50
-
 #define ENCODER_PUSH_BUTTON_TIME_FOR_OUTPUT_SWITCH 350
+const short ENCODER_SPEED_TIMEFRAME = 25;
+const short ENCODER_SPEED_VALUES_NUM = 6;
 
 //// Pins
 #define PLOAD_PIN 13         // Connects to Parallel load pin the 165
@@ -64,17 +66,16 @@
 #define ROTATION_LEFT 0
 #define ROTATION_RIGHT 1
 
-#define ENCODER_BUTTON_MODE_JOY_1_ONLY 0
-#define ENCODER_BUTTON_MODE_SEPARATE 1
-
 #define POT_MODE_ALL 0
 #define POT_MODE_3 1
 
 #define BUTTON_MODE_BIT 22
 #define POT_MODE_BIT 21
 
-#define ENCODERS_TO_JOY
-#define ENCODERS_TO_MIDI
+#define JOY_ENABLED
+#define MIDI_ENABLED
+
+//#define DEBUG
 
 const short JOY_0 = 0;
 const short JOY_1 = 1;
@@ -281,18 +282,21 @@ EncoderRotationToMidi encoderRotationToMidiCommands[ENCODER_ROTATION_MIDI_COMMAN
   { 4, true, BUTTON_MODE_2, 10, 17 },
 };
 
-int pot1value;
-int pot2value;
-int pot3value;
-int pot4value;
-int pot5value;
-int pot6value;
-int axisXValue;
-int axisYValue;
-int axisZValue;
-int axisRxValue;
-int axisRyValue;
-int axisRzValue;
+struct EncoderValueHistory {
+  short direction;
+  unsigned int timeTriggered;
+};
+
+EncoderValueHistory encoderSpeedStorages[ENCODERS_NUM][ENCODER_SPEED_VALUES_NUM];
+
+Vector<EncoderValueHistory> encoderSpeedHistory[ENCODERS_NUM] = {
+  Vector<EncoderValueHistory>(encoderSpeedStorages[0]),
+  Vector<EncoderValueHistory>(encoderSpeedStorages[1]),
+  Vector<EncoderValueHistory>(encoderSpeedStorages[2]),
+  Vector<EncoderValueHistory>(encoderSpeedStorages[3]),
+  Vector<EncoderValueHistory>(encoderSpeedStorages[4]),
+};
+
 int oldAxisXValue = -1;
 int oldAxisYValue = -1;
 int oldAxisZValue = -1;
@@ -347,6 +351,7 @@ BYTES_VAL_T readShiftRegs() {
 
 
 void displayPinValues() {
+#ifdef DEBUG
   return;
   Serial.print("Pin States:\r\n");
 
@@ -364,10 +369,13 @@ void displayPinValues() {
   }
 
   Serial.print("\r\n");
+#endif
 }
 
 void setup() {
+#ifdef DEBUG
   Serial.begin(9600);
+#endif
 
   pinMode(ENC1_PIN_A, INPUT_PULLUP);
   pinMode(ENC1_PIN_B, INPUT_PULLUP);
@@ -437,14 +445,11 @@ void loop() {
     oldPinValues = pinValues;
   }
 
-  //  processButtonMode();
-  //  processPotMode();
-  //  processLeds();
-  // processButtons();
   processPots();
   deactivateEncoderButtons();
   deactivateSwitchButtons();
   deactivateEncoderPushButtons();
+  cleanEncoderHistories();
 
   MidiUSB.flush();
 
@@ -518,8 +523,6 @@ void activateEncoderPushButton(short pushButtonIndex) {
       encoderPushButtonsEvents[i].activation = (unsigned int)millis();
     }
   }
-
-  // midi
 }
 
 void processButtonMode() {
@@ -549,20 +552,12 @@ void processLeds() {
 }
 
 void processPots() {
-  pot1value = analogRead(POT1_PIN);
-  pot2value = analogRead(POT2_PIN);
-  pot3value = analogRead(POT3_PIN);
-  pot4value = analogRead(POT4_PIN);
-  pot5value = analogRead(POT5_PIN);
-  pot6value = analogRead(POT6_PIN);
-
-  axisXValue = pot1value;
-  axisYValue = currentPotMode == POT_MODE_ALL ? pot2value : pot4value;
-  axisZValue = currentPotMode == POT_MODE_ALL ? pot3value : pot2value;
-  axisRxValue = currentPotMode == POT_MODE_ALL ? pot4value : pot5value;
-  axisRyValue = currentPotMode == POT_MODE_ALL ? pot5value : pot3value;
-  axisRzValue = currentPotMode == POT_MODE_ALL ? pot6value : pot6value;
-
+  int axisXValue = analogRead(POT1_PIN);
+  int axisYValue = currentPotMode == POT_MODE_ALL ? analogRead(POT2_PIN) : analogRead(POT4_PIN);
+  int axisZValue = currentPotMode == POT_MODE_ALL ? analogRead(POT3_PIN) : analogRead(POT2_PIN);
+  int axisRxValue = currentPotMode == POT_MODE_ALL ? analogRead(POT4_PIN) : analogRead(POT5_PIN);
+  int axisRyValue = currentPotMode == POT_MODE_ALL ? analogRead(POT5_PIN) : analogRead(POT3_PIN);
+  int axisRzValue = analogRead(POT6_PIN);
 
   axisXLastValues[axisDebounceCounter] = axisXValue;
   axisYLastValues[axisDebounceCounter] = axisYValue;
@@ -578,6 +573,8 @@ void processPots() {
     if (axisXValue != oldAxisXValue) {
       Joysticks[0].setXAxis(axisXValue);
 
+      controlChange(10, 30, map(axisXValue, 0, 1023, 0, 127));
+
       oldAxisXValue = axisXValue;
 
       //Serial.println(axisXValue);
@@ -586,11 +583,15 @@ void processPots() {
     if (axisYValue != oldAxisYValue) {
       Joysticks[0].setYAxis(axisYValue);
 
+      controlChange(10, 31, map(axisYValue, 0, 1023, 0, 127));
+
       oldAxisYValue = axisYValue;
     }
     axisZValue = getAverage(axisZLastValues, DEBOUNCE_ITERATIONS);
     if (axisZValue != oldAxisZValue) {
       Joysticks[0].setZAxis(axisZValue);
+
+      controlChange(10, 32, map(axisZValue, 0, 1023, 0, 127));
 
       oldAxisZValue = axisZValue;
     }
@@ -598,17 +599,23 @@ void processPots() {
     if (axisRxValue != oldAxisRxValue) {
       Joysticks[0].setRxAxis(axisRxValue);
 
+      controlChange(10, 33, map(axisRxValue, 0, 1023, 0, 127));
+
       oldAxisRxValue = axisRxValue;
     }
     axisRyValue = getAverage(axisRyLastValues, DEBOUNCE_ITERATIONS);
     if (axisRyValue != oldAxisRyValue) {
       Joysticks[0].setRyAxis(axisRyValue);
 
+      controlChange(10, 34, map(axisRyValue, 0, 1023, 0, 127));
+
       oldAxisRyValue = axisRyValue;
     }
     axisRzValue = getAverage(axisRzLastValues, DEBOUNCE_ITERATIONS);
     if (axisRzValue != oldAxisRzValue) {
       Joysticks[0].setRzAxis(axisRzValue);
+
+      controlChange(10, 35, map(axisRzValue, 0, 1023, 0, 127));
 
       oldAxisRzValue = axisRzValue;
     }
@@ -680,8 +687,11 @@ void processEncoderRotation(short encoderIndex, short rotation) {
 
   for (int i = 0; i < ENCODER_ROTATION_MIDI_COMMANDS_NUM; i++) {
     if (encoderRotationToMidiCommands[i].encoderIndex == encoderIndex && encoderRotationToMidiCommands[i].pushButtonValue == encoderPushButtons[encoderIndex].active && (currentButtonMode & encoderRotationToMidiCommands[i].buttonMode) == currentButtonMode) {
-      controlChange(encoderRotationToMidiCommands[i].channel, encoderRotationToMidiCommands[i].control, rotation ? 65 : 63);
+      controlChange(encoderRotationToMidiCommands[i].channel, encoderRotationToMidiCommands[i].control, calculateEncoderVelocity(encoderIndex, rotation));
+
       MidiUSB.flush();
+
+      addEncoderHistoryValue(encoderIndex, rotation);
     }
   }
 }
@@ -720,7 +730,46 @@ void deactivateEncoderPushButtons() {
   }
 }
 
-#ifdef ENCODERS_TO_MIDI
+void addEncoderHistoryValue(short encoderIndex, short direction) {
+  if (encoderSpeedHistory[encoderIndex].size() == encoderSpeedHistory[encoderIndex].max_size()) {
+    encoderSpeedHistory[encoderIndex].remove(0);
+  }
+
+  encoderSpeedHistory[encoderIndex].push_back({ direction, millis() });
+}
+
+void cleanEncoderHistories() {
+  unsigned int now = millis();
+
+  for (short i = 0; i < ENCODERS_NUM; i++) {
+    for (short y = 0; y < encoderSpeedHistory[i].size(); y++) {
+      if (now - encoderSpeedHistory[i].at(y).timeTriggered <= ENCODER_SPEED_TIMEFRAME) {
+        break;
+      }
+
+      encoderSpeedHistory[i].remove(y);
+    }
+  }
+}
+
+short calculateEncoderVelocity(short encoderIndex, short direction) {
+  unsigned int now = millis();
+
+  short clicksCounter = 0;
+  for (short i = encoderSpeedHistory[encoderIndex].size() - 1; i >= 0; i--) {
+    if (encoderSpeedHistory[encoderIndex].at(i).direction != direction) {
+      break;
+    }
+    if (now - encoderSpeedHistory[encoderIndex].at(i).timeTriggered > ENCODER_SPEED_TIMEFRAME) {
+      break;
+    }
+
+    clicksCounter++;
+  }
+
+  return direction ? 65 + clicksCounter * 2 : 63 - clicksCounter * 2;
+}
+
 // Arduino MIDI functions MIDIUSB Library
 void noteOn(byte channel, byte pitch, byte velocity) {
   midiEventPacket_t noteOn = { 0x09, 0x90 | channel, pitch, velocity };
@@ -736,4 +785,3 @@ void controlChange(byte channel, byte control, byte value) {
   midiEventPacket_t event = { 0x0B, 0xB0 | channel, control, value };
   MidiUSB.sendMIDI(event);
 }
-#endif
