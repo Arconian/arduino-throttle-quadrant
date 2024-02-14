@@ -1,27 +1,31 @@
-/////////////////////
-//// Version 1.4 ////
-/////////////////////
-
 #include <Joystick.h>
+#include <MIDIUSB.h>
+#include <Vector.h>
 
 //// Debouncing
 #define DEBOUNCE_ITERATIONS 3
 
 //// Shift reg data
-#define NUMBER_OF_SHIFT_CHIPS   4
-#define DATA_WIDTH   NUMBER_OF_SHIFT_CHIPS * 8
-#define PULSE_WIDTH_USEC   5
+#define NUMBER_OF_SHIFT_CHIPS 4
+#define DATA_WIDTH NUMBER_OF_SHIFT_CHIPS * 8
+#define PULSE_WIDTH_USEC 5
 #define BYTES_VAL_T unsigned long
 
-//// Encoder pause
-#define ENCODER_BUTTON_PRESS_TIME 27
+#define ENCODERS_NUM 5
+#define TWO_POSITION_SWITCHES_NUM 3
+
+//// Encoder settings
+#define ENCODER_BUTTON_PRESS_TIME 28
 #define SWITCH_BUTTON_PRESS_TIME 50
+#define ENCODER_PUSH_BUTTON_TIME_FOR_OUTPUT_SWITCH 350
+const short ENCODER_SPEED_TIMEFRAME = 16;
+const short ENCODER_SPEED_VALUES_NUM = 2;
 
 //// Pins
-#define PLOAD_PIN 13  // Connects to Parallel load pin the 165
+#define PLOAD_PIN 13         // Connects to Parallel load pin the 165
 #define CLOCK_ENABLE_PIN 10  // Connects to Clock Enable pin the 165
-#define DATA_PIN 11  // Connects to the Q7 pin the 165
-#define CLOCK_PIN 12  // Connects to the Clock pin the 165
+#define DATA_PIN 11          // Connects to the Q7 pin the 165
+#define CLOCK_PIN 12         // Connects to the Clock pin the 165
 
 #define LED1_PIN 16
 #define LED2_PIN 15
@@ -55,8 +59,8 @@
 #define BUTTON_MODE_2 2
 #define BUTTON_MODE_BOTH 3
 
-#define ENCODER_BUTTON_MODE_JOY_1_ONLY 0
-#define ENCODER_BUTTON_MODE_SEPARATE 1
+#define ROTATION_LEFT 0
+#define ROTATION_RIGHT 1
 
 #define POT_MODE_ALL 0
 #define POT_MODE_3 1
@@ -64,150 +68,243 @@
 #define BUTTON_MODE_BIT 22
 #define POT_MODE_BIT 21
 
+#define JOY_ENABLED
+#define MIDI_ENABLED
+
+//#define DEBUG
+
+const short JOY_0 = 0;
+const short JOY_1 = 1;
+
 BYTES_VAL_T pinValues;
 BYTES_VAL_T oldPinValues;
 
-Joystick_ Joystick1 = Joystick_(0x04, JOYSTICK_TYPE_JOYSTICK, 31, 0, true, true, true, true, true, true, false, false, false, false, false);
-Joystick_ Joystick2 = Joystick_(0x05, JOYSTICK_TYPE_JOYSTICK, 20, 0, false, false, false, false, false, false, false, false, false, false, false);
+volatile boolean pinAState;
 
 short currentButtonMode = BUTTON_MODE_1;
 short currentPotMode = POT_MODE_ALL;
 
-struct Button {
-  int bitNum;
-  int logicalButtonNum;
+struct EncoderPushButton {
+  short bitNum;
+  short encoderIndex;
+  bool active;
+  unsigned int activation;
+};
+
+EncoderPushButton encoderPushButtons[ENCODERS_NUM] = {
+  { 6, 0 },
+  { 7, 1 },
+  { 16, 2 },
+  { 27, 3 },
+  { 26, 4 }
+};
+
+struct EncoderPushButtonEvent {
+  short pushButtonIndex;
   short buttonMode;
+  short joyIndex;
+  short buttonNumber;
+  byte midiChannel;
+  byte midiPitch;
+  bool active;
+  unsigned int activation;
+};
+
+#define JOY0_ENCODER_PUSH_BUTTONS_NUM 9
+#define JOY1_ENCODER_PUSH_BUTTONS_NUM 0
+EncoderPushButtonEvent encoderPushButtonsEvents[JOY0_ENCODER_PUSH_BUTTONS_NUM + JOY1_ENCODER_PUSH_BUTTONS_NUM] = {
+  { 0, BUTTON_MODE_BOTH, JOY_0, 24, 10, 24 },
+  { 1, BUTTON_MODE_1, JOY_0, 25, 10, 25 },
+  { 2, BUTTON_MODE_1, JOY_0, 26, 10, 26 },
+  { 3, BUTTON_MODE_1, JOY_0, 27, 10, 27 },
+  { 4, BUTTON_MODE_1, JOY_0, 28, 10, 28 },
+  { 1, BUTTON_MODE_2, JOY_0, 29, 10, 29 },
+  { 2, BUTTON_MODE_2, JOY_0, 30, 10, 30 },
+  { 3, BUTTON_MODE_2, JOY_0, 31, 10, 31 },
+  { 4, BUTTON_MODE_2, JOY_0, 32, 10, 32 },
+};
+
+struct Button {
+  short bitNum;
+  short buttonMode;
+  short joyIndex;
+  short buttonNumber;
+  byte midiChannel;
+  byte midiPitch;
+  bool previousState;
+};
+
+#define JOY0_BUTTONS_NUM 18
+#define JOY1_BUTTONS_NUM 0
+Button buttonEvents[JOY0_BUTTONS_NUM + JOY1_BUTTONS_NUM] = {
+  { 2, BUTTON_MODE_BOTH, JOY_0, 6, 10, 6 },
+  { 3, BUTTON_MODE_BOTH, JOY_0, 7, 10, 7 },
+  { 0, BUTTON_MODE_BOTH, JOY_0, 8, 10, 8 },
+  { 1, BUTTON_MODE_BOTH, JOY_0, 9, 10, 9 },
+  { 4, BUTTON_MODE_BOTH, JOY_0, 10, 10, 10 },
+  { 5, BUTTON_MODE_BOTH, JOY_0, 11, 10, 11 },
+  { 12, BUTTON_MODE_1, JOY_0, 12, 10, 12 },
+  { 14, BUTTON_MODE_BOTH, JOY_0, 13, 10, 13 },
+  { 13, BUTTON_MODE_1, JOY_0, 14, 10, 14 },
+  { 15, BUTTON_MODE_BOTH, JOY_0, 15, 10, 15 },
+  { 19, BUTTON_MODE_1, JOY_0, 16, 10, 16 },
+  { 18, BUTTON_MODE_1, JOY_0, 17, 10, 17 },
+  { 23, BUTTON_MODE_BOTH, JOY_0, 18, 10, 18 },
+  { 17, BUTTON_MODE_BOTH, JOY_0, 19, 10, 19 },
+  { 12, BUTTON_MODE_2, JOY_0, 20, 10, 20 },
+  { 13, BUTTON_MODE_2, JOY_0, 21, 10, 21 },
+  { 19, BUTTON_MODE_2, JOY_0, 22, 10, 22 },
+  { 18, BUTTON_MODE_2, JOY_0, 23, 10, 23 },
 };
 
 struct TwoWaySwitchButton {
   int bitNum;
-  int logicalButtonNum;
   short buttonMode;
+  short joyIndex;
+  short buttonNumber;
+  byte midiChannel;
+  byte midiPitch;
   bool active;
   unsigned int activation;
   bool lastState;
 };
 
-#define JOY1_BUTTONS_NUM 19
-
-Button joy1Buttons[JOY1_BUTTONS_NUM] = {
-  {2, 10, BUTTON_MODE_BOTH},
-  {3, 11, BUTTON_MODE_BOTH},
-  {0, 12, BUTTON_MODE_BOTH},
-  {1, 13, BUTTON_MODE_BOTH},
-  {4, 14, BUTTON_MODE_BOTH},
-  {5, 15, BUTTON_MODE_BOTH},
-  {6, 16, BUTTON_MODE_BOTH},
-  {7, 17, BUTTON_MODE_1},
-  {16, 18, BUTTON_MODE_1},
-  {12, 19, BUTTON_MODE_1},
-  {13, 20, BUTTON_MODE_1},
-  {14, 21, BUTTON_MODE_BOTH},
-  {15, 22, BUTTON_MODE_BOTH},
-  //  {25, 23, BUTTON_MODE_BOTH},
-  //  {24, 24, BUTTON_MODE_BOTH},
-  {27, 25, BUTTON_MODE_1},
-  {26, 26, BUTTON_MODE_1},
-  {19, 27, BUTTON_MODE_1},
-  {18, 28, BUTTON_MODE_1},
-  {23, 29, BUTTON_MODE_BOTH},
-  {17, 30, BUTTON_MODE_BOTH},
-};
-
-#define JOY1_SWITCH_BUTTONS_NUM 2
-
-TwoWaySwitchButton joy1SwitchButtons[JOY1_SWITCH_BUTTONS_NUM] = {
-  {25, 23, BUTTON_MODE_BOTH},
-  {24, 24, BUTTON_MODE_BOTH},
-};
-
-#define JOY2_BUTTONS_NUM 8
-
-Button joy2Buttons[JOY2_BUTTONS_NUM] = {
-  //  {10, 8, BUTTON_MODE_BOTH},
-  //  {11, 9, BUTTON_MODE_BOTH},
-  //  {8, 10, BUTTON_MODE_BOTH},
-  //  {9, 11, BUTTON_MODE_BOTH},
-  {7, 12, BUTTON_MODE_2},
-  {16, 13, BUTTON_MODE_2},
-  {12, 14, BUTTON_MODE_2},
-  {13, 15, BUTTON_MODE_2},
-  {27, 16, BUTTON_MODE_2},
-  {26, 17, BUTTON_MODE_2},
-  {19, 18, BUTTON_MODE_2},
-  {18, 19, BUTTON_MODE_2},
-};
-
-#define JOY2_SWITCH_BUTTONS_NUM 4
-
-TwoWaySwitchButton joy2SwitchButtons[JOY2_SWITCH_BUTTONS_NUM] = {
-  {10, 8, BUTTON_MODE_BOTH},
-  {11, 9, BUTTON_MODE_BOTH},
-  {8, 10, BUTTON_MODE_BOTH},
-  {9, 11, BUTTON_MODE_BOTH},
-};
-
-volatile boolean state0;
-
-struct EncoderButton {
-  int joy1Button;
-  int joy2Button;
-  short buttonMode;
-  volatile bool joy1Active;
-  volatile unsigned int joy1Activation;
-  volatile bool joy2Active;
-  volatile unsigned int joy2Activation;
+#define JOY0_SWITCH_BUTTONS_NUM 6
+#define JOY1_SWITCH_BUTTONS_NUM 0
+TwoWaySwitchButton twoWaySwitchEvents[JOY0_SWITCH_BUTTONS_NUM + JOY1_SWITCH_BUTTONS_NUM] = {
+  { 25, BUTTON_MODE_BOTH, JOY_0, 0, 10, 0 },
+  { 24, BUTTON_MODE_BOTH, JOY_0, 1, 10, 1 },
+  { 10, BUTTON_MODE_BOTH, JOY_0, 2, 10, 2 },
+  { 11, BUTTON_MODE_BOTH, JOY_0, 3, 10, 3 },
+  { 8, BUTTON_MODE_BOTH, JOY_0, 4, 10, 4 },
+  { 9, BUTTON_MODE_BOTH, JOY_0, 5, 10, 5 },
 };
 
 struct Encoder {
-  int pinA;
-  int pinB;
-  int leftButtonIndex;
-  int rightButtonIndex;
+  short pinA;
+  short pinB;
   volatile int encCounter;
   volatile boolean lastState;
   volatile int lastCounter;
 };
 
-EncoderButton encoderButtons[10] = {
-  {0, 0, ENCODER_BUTTON_MODE_JOY_1_ONLY},
-  {1, 0, ENCODER_BUTTON_MODE_JOY_1_ONLY},
-  {2, 0, ENCODER_BUTTON_MODE_SEPARATE},
-  {3, 1, ENCODER_BUTTON_MODE_SEPARATE},
-  {4, 2, ENCODER_BUTTON_MODE_SEPARATE},
-  {5, 3, ENCODER_BUTTON_MODE_SEPARATE},
-  {6, 4, ENCODER_BUTTON_MODE_SEPARATE},
-  {7, 5, ENCODER_BUTTON_MODE_SEPARATE},
-  {8, 6, ENCODER_BUTTON_MODE_SEPARATE},
-  {9, 7, ENCODER_BUTTON_MODE_SEPARATE},
+Encoder encoders[ENCODERS_NUM] = {
+  { ENC1_PIN_A, ENC1_PIN_B },
+  { ENC2_PIN_A, ENC2_PIN_B },
+  { ENC3_PIN_A, ENC3_PIN_B },
+  { ENC4_PIN_A, ENC4_PIN_B },
+  { ENC5_PIN_A, ENC5_PIN_B },
 };
 
-Encoder encoders[5] = {
-  {ENC1_PIN_A, ENC1_PIN_B, 0, 1},
-  {ENC2_PIN_A, ENC2_PIN_B, 2, 3},
-  {ENC3_PIN_A, ENC3_PIN_B, 4, 5},
-  {ENC4_PIN_A, ENC4_PIN_B, 6, 7},
-  {ENC5_PIN_A, ENC5_PIN_B, 8, 9},
+struct EncoderRotationToJoy {
+  short encoderIndex;
+  short direction;
+  bool pushButtonValue;
+  short buttonMode;
+  short joyIndex;
+  short buttonNumber;
+  volatile bool active;
+  volatile unsigned int activation;
 };
 
-int pot1value;
-int pot2value;
-int pot3value;
-int pot4value;
-int pot5value;
-int pot6value;
-int axisXValue;
-int axisYValue;
-int axisZValue;
-int axisRxValue;
-int axisRyValue;
-int axisRzValue;
+#define ENCODER_ROTATION_JOY_0_BUTTONS_NUM 0
+#define ENCODER_ROTATION_JOY_1_BUTTONS_NUM 36
+EncoderRotationToJoy encoderRotationToJoyButtons[ENCODER_ROTATION_JOY_0_BUTTONS_NUM + ENCODER_ROTATION_JOY_1_BUTTONS_NUM] = {
+  { 0, ROTATION_LEFT, false, BUTTON_MODE_BOTH, JOY_1, 0 },
+  { 0, ROTATION_RIGHT, false, BUTTON_MODE_BOTH, JOY_1, 1 },
+  { 0, ROTATION_LEFT, true, BUTTON_MODE_BOTH, JOY_1, 2 },
+  { 0, ROTATION_RIGHT, true, BUTTON_MODE_BOTH, JOY_1, 3 },
+  { 1, ROTATION_LEFT, false, BUTTON_MODE_1, JOY_1, 4 },
+  { 1, ROTATION_RIGHT, false, BUTTON_MODE_1, JOY_1, 5 },
+  { 1, ROTATION_LEFT, true, BUTTON_MODE_1, JOY_1, 6 },
+  { 1, ROTATION_RIGHT, true, BUTTON_MODE_1, JOY_1, 7 },
+  { 2, ROTATION_LEFT, false, BUTTON_MODE_1, JOY_1, 8 },
+  { 2, ROTATION_RIGHT, false, BUTTON_MODE_1, JOY_1, 9 },
+  { 2, ROTATION_LEFT, true, BUTTON_MODE_1, JOY_1, 10 },
+  { 2, ROTATION_RIGHT, true, BUTTON_MODE_1, JOY_1, 11 },
+  { 3, ROTATION_LEFT, false, BUTTON_MODE_1, JOY_1, 12 },
+  { 3, ROTATION_RIGHT, false, BUTTON_MODE_1, JOY_1, 13 },
+  { 3, ROTATION_LEFT, true, BUTTON_MODE_1, JOY_1, 14 },
+  { 3, ROTATION_RIGHT, true, BUTTON_MODE_1, JOY_1, 15 },
+  { 4, ROTATION_LEFT, false, BUTTON_MODE_1, JOY_1, 16 },
+  { 4, ROTATION_RIGHT, false, BUTTON_MODE_1, JOY_1, 17 },
+  { 4, ROTATION_LEFT, true, BUTTON_MODE_1, JOY_1, 18 },
+  { 4, ROTATION_RIGHT, true, BUTTON_MODE_1, JOY_1, 19 },
+  { 1, ROTATION_LEFT, false, BUTTON_MODE_2, JOY_1, 20 },
+  { 1, ROTATION_RIGHT, false, BUTTON_MODE_2, JOY_1, 21 },
+  { 1, ROTATION_LEFT, true, BUTTON_MODE_2, JOY_1, 22 },
+  { 1, ROTATION_RIGHT, true, BUTTON_MODE_2, JOY_1, 23 },
+  { 2, ROTATION_LEFT, false, BUTTON_MODE_2, JOY_1, 24 },
+  { 2, ROTATION_RIGHT, false, BUTTON_MODE_2, JOY_1, 25 },
+  { 2, ROTATION_LEFT, true, BUTTON_MODE_2, JOY_1, 26 },
+  { 2, ROTATION_RIGHT, true, BUTTON_MODE_2, JOY_1, 27 },
+  { 3, ROTATION_LEFT, false, BUTTON_MODE_2, JOY_1, 28 },
+  { 3, ROTATION_RIGHT, false, BUTTON_MODE_2, JOY_1, 29 },
+  { 3, ROTATION_LEFT, true, BUTTON_MODE_2, JOY_1, 30 },
+  { 3, ROTATION_RIGHT, true, BUTTON_MODE_2, JOY_1, 31 },
+  { 4, ROTATION_LEFT, false, BUTTON_MODE_2, JOY_1, 32 },
+  { 4, ROTATION_RIGHT, false, BUTTON_MODE_2, JOY_1, 33 },
+  { 4, ROTATION_LEFT, true, BUTTON_MODE_2, JOY_1, 34 },
+  { 4, ROTATION_RIGHT, true, BUTTON_MODE_2, JOY_1, 35 },
+};
+
+struct EncoderRotationToMidi {
+  short encoderIndex;
+  bool pushButtonValue;
+  short buttonMode;
+  short channel;
+  short control;
+};
+
+#define ENCODER_ROTATION_MIDI_COMMANDS_NUM 18
+EncoderRotationToMidi encoderRotationToMidiCommands[ENCODER_ROTATION_MIDI_COMMANDS_NUM] = {
+  { 0, false, BUTTON_MODE_BOTH, 10, 0 },
+  { 0, true, BUTTON_MODE_BOTH, 10, 1 },
+  { 1, false, BUTTON_MODE_1, 10, 2 },
+  { 1, true, BUTTON_MODE_1, 10, 3 },
+  { 2, false, BUTTON_MODE_1, 10, 4 },
+  { 2, true, BUTTON_MODE_1, 10, 5 },
+  { 3, false, BUTTON_MODE_1, 10, 6 },
+  { 3, true, BUTTON_MODE_1, 10, 7 },
+  { 4, false, BUTTON_MODE_1, 10, 8 },
+  { 4, true, BUTTON_MODE_1, 10, 9 },
+  { 1, false, BUTTON_MODE_2, 10, 10 },
+  { 1, true, BUTTON_MODE_2, 10, 11 },
+  { 2, false, BUTTON_MODE_2, 10, 12 },
+  { 2, true, BUTTON_MODE_2, 10, 13 },
+  { 3, false, BUTTON_MODE_2, 10, 14 },
+  { 3, true, BUTTON_MODE_2, 10, 15 },
+  { 4, false, BUTTON_MODE_2, 10, 16 },
+  { 4, true, BUTTON_MODE_2, 10, 17 },
+};
+
+struct EncoderValueHistory {
+  short direction;
+  unsigned int timeTriggered;
+};
+
+EncoderValueHistory encoderSpeedStorages[ENCODERS_NUM][ENCODER_SPEED_VALUES_NUM];
+
+Vector<EncoderValueHistory> encoderSpeedHistory[ENCODERS_NUM] = {
+  Vector<EncoderValueHistory>(encoderSpeedStorages[0]),
+  Vector<EncoderValueHistory>(encoderSpeedStorages[1]),
+  Vector<EncoderValueHistory>(encoderSpeedStorages[2]),
+  Vector<EncoderValueHistory>(encoderSpeedStorages[3]),
+  Vector<EncoderValueHistory>(encoderSpeedStorages[4]),
+};
+
 int oldAxisXValue = -1;
 int oldAxisYValue = -1;
 int oldAxisZValue = -1;
 int oldAxisRxValue = -1;
 int oldAxisRyValue = -1;
 int oldAxisRzValue = -1;
+short oldAxisXMidiValue = -1;
+short oldAxisYMidiValue = -1;
+short oldAxisZMidiValue = -1;
+short oldAxisRxMidiValue = -1;
+short oldAxisRyMidiValue = -1;
+short oldAxisRzMidiValue = -1;
 
 int axisDebounceCounter = 0;
 int axisXLastValues[DEBOUNCE_ITERATIONS];
@@ -217,8 +314,12 @@ int axisRxLastValues[DEBOUNCE_ITERATIONS];
 int axisRyLastValues[DEBOUNCE_ITERATIONS];
 int axisRzLastValues[DEBOUNCE_ITERATIONS];
 
-BYTES_VAL_T readShiftRegs()
-{
+Joystick_ Joysticks[2]{
+  Joystick_(0x04, JOYSTICK_TYPE_JOYSTICK, JOY0_BUTTONS_NUM + JOY0_SWITCH_BUTTONS_NUM + JOY0_ENCODER_PUSH_BUTTONS_NUM + ENCODER_ROTATION_JOY_0_BUTTONS_NUM, 0, true, true, true, true, true, true, false, false, false, false, false),
+  Joystick_(0x05, JOYSTICK_TYPE_JOYSTICK, JOY1_BUTTONS_NUM + JOY1_SWITCH_BUTTONS_NUM + JOY1_ENCODER_PUSH_BUTTONS_NUM + ENCODER_ROTATION_JOY_1_BUTTONS_NUM, 0, false, false, false, false, false, false, false, false, false, false, false),
+};
+
+BYTES_VAL_T readShiftRegs() {
   long bitVal;
   BYTES_VAL_T bytesVal = 0;
 
@@ -233,8 +334,7 @@ BYTES_VAL_T readShiftRegs()
   /* Loop to read each bit value from the serial out line
      of the SN74HC165N.
   */
-  for (int i = 0; i < DATA_WIDTH; i++)
-  {
+  for (int i = 0; i < DATA_WIDTH; i++) {
     bitVal = digitalRead(DATA_PIN);
 
     /* Set the corresponding bit in bytesVal.
@@ -252,13 +352,12 @@ BYTES_VAL_T readShiftRegs()
 }
 
 
-void displayPinValues()
-{
+void displayPinValues() {
+#ifdef DEBUG
   return;
   Serial.print("Pin States:\r\n");
 
-  for (int i = 0; i < DATA_WIDTH; i++)
-  {
+  for (int i = 0; i < DATA_WIDTH; i++) {
     Serial.print("  Pin-");
     Serial.print(i);
     Serial.print(": ");
@@ -272,11 +371,13 @@ void displayPinValues()
   }
 
   Serial.print("\r\n");
+#endif
 }
 
-void setup()
-{
+void setup() {
+#ifdef DEBUG
   Serial.begin(9600);
+#endif
 
   pinMode(ENC1_PIN_A, INPUT_PULLUP);
   pinMode(ENC1_PIN_B, INPUT_PULLUP);
@@ -313,8 +414,8 @@ void setup()
   displayPinValues();
   oldPinValues = pinValues;
 
-  Joystick1.begin();
-  Joystick2.begin();
+  Joysticks[0].begin();
+  Joysticks[1].begin();
 
   processButtonMode();
   processPotMode();
@@ -328,16 +429,14 @@ void setup()
   attachInterrupt(4, processEncoder5, CHANGE);
 }
 
-void loop()
-{
+void loop() {
   /* Read the state of all zones.
   */
   pinValues = readShiftRegs();
 
   /* If there was a change in state, display which ones changed.
   */
-  if (pinValues != oldPinValues)
-  {
+  if (pinValues != oldPinValues) {
     displayPinValues();
 
     processButtonMode();
@@ -348,52 +447,82 @@ void loop()
     oldPinValues = pinValues;
   }
 
-  //  processButtonMode();
-  //  processPotMode();
-  //  processLeds();
-  // processButtons();
   processPots();
   deactivateEncoderButtons();
-  deactivateEncoderSwitchButtons();
+  deactivateSwitchButtons();
+  deactivateEncoderPushButtons();
+  cleanEncoderHistories();
+
+  MidiUSB.flush();
 
   // Joystick1.sendState();
   // Joystick2.sendState();
 }
 
 void processButtons() {
-  for (int i = 0; i < JOY1_BUTTONS_NUM; i++) {
-    int state = ((currentButtonMode & joy1Buttons[i].buttonMode) == currentButtonMode) && ((pinValues >> joy1Buttons[i].bitNum) & 1);
-    Joystick1.setButton(joy1Buttons[i].logicalButtonNum, state);
-  }
-  for (int i = 0; i < JOY2_BUTTONS_NUM; i++) {
-    int state = ((currentButtonMode & joy2Buttons[i].buttonMode) == currentButtonMode) && ((pinValues >> joy2Buttons[i].bitNum) & 1);
-    Joystick2.setButton(joy2Buttons[i].logicalButtonNum, state);
-  }
+  for (int i = 0; i < JOY0_BUTTONS_NUM + JOY1_BUTTONS_NUM; i++) {
+    bool state = ((currentButtonMode & buttonEvents[i].buttonMode) == currentButtonMode) && ((pinValues >> buttonEvents[i].bitNum) & 1);
 
-  for (int i = 0; i < JOY1_SWITCH_BUTTONS_NUM; i++) {
-    int state = ((currentButtonMode & joy1SwitchButtons[i].buttonMode) == currentButtonMode) && ((pinValues >> joy1SwitchButtons[i].bitNum) & 1);
-    if (state) {
-      if (!joy1SwitchButtons[i].lastState) {
-        Joystick1.setButton(joy1SwitchButtons[i].logicalButtonNum, state);
-        joy1SwitchButtons[i].active = true;
-        joy1SwitchButtons[i].activation = (unsigned int) millis();
-        joy1SwitchButtons[i].lastState = true;
+    if (state != buttonEvents[i].previousState) {
+      Joysticks[buttonEvents[i].joyIndex].setButton(buttonEvents[i].buttonNumber, state);
+
+      if (state) {
+        noteOn(buttonEvents[i].midiChannel, buttonEvents[i].midiPitch, 127);
+      } else {
+        noteOff(buttonEvents[i].midiChannel, buttonEvents[i].midiPitch, 0);
       }
-    } else {
-      joy1SwitchButtons[i].lastState = false;
+
+      buttonEvents[i].previousState = state;
     }
   }
-  for (int i = 0; i < JOY2_SWITCH_BUTTONS_NUM; i++) {
-    int state = ((currentButtonMode & joy2SwitchButtons[i].buttonMode) == currentButtonMode) && ((pinValues >> joy2SwitchButtons[i].bitNum) & 1);
+
+  for (int i = 0; i < JOY0_SWITCH_BUTTONS_NUM + JOY1_SWITCH_BUTTONS_NUM; i++) {
+    bool state = ((currentButtonMode & twoWaySwitchEvents[i].buttonMode) == currentButtonMode) && ((pinValues >> twoWaySwitchEvents[i].bitNum) & 1);
     if (state) {
-      if (!joy2SwitchButtons[i].lastState) {
-        Joystick2.setButton(joy2SwitchButtons[i].logicalButtonNum, state);
-        joy2SwitchButtons[i].active = true;
-        joy2SwitchButtons[i].activation = (unsigned int) millis();
-        joy2SwitchButtons[i].lastState = true;
+      if (!twoWaySwitchEvents[i].lastState) {
+        Joysticks[twoWaySwitchEvents[i].joyIndex].setButton(twoWaySwitchEvents[i].buttonNumber, state);
+
+        noteOn(twoWaySwitchEvents[i].midiChannel, twoWaySwitchEvents[i].midiPitch, 127);
+
+        twoWaySwitchEvents[i].active = true;
+        twoWaySwitchEvents[i].activation = (unsigned int)millis();
+        twoWaySwitchEvents[i].lastState = true;
       }
     } else {
-      joy2SwitchButtons[i].lastState = false;
+      twoWaySwitchEvents[i].lastState = false;
+    }
+  }
+
+  for (short i = 0; i < ENCODERS_NUM; i++) {
+    bool isActive = (pinValues >> encoderPushButtons[i].bitNum) & 1;
+    if (isActive) {
+      if (!encoderPushButtons[i].active) {
+        encoderPushButtons[i].active = true;
+        encoderPushButtons[i].activation = (unsigned int)millis();
+      }
+    } else {
+      if (encoderPushButtons[i].active) {
+        if ((unsigned int)millis() - encoderPushButtons[i].activation <= ENCODER_PUSH_BUTTON_TIME_FOR_OUTPUT_SWITCH) {
+          activateEncoderPushButton(i);
+        }
+
+        encoderPushButtons[i].active = false;
+      }
+    }
+  }
+}
+
+void activateEncoderPushButton(short pushButtonIndex) {
+  for (short i = 0; i < JOY0_ENCODER_PUSH_BUTTONS_NUM + JOY1_ENCODER_PUSH_BUTTONS_NUM; i++) {
+    if (encoderPushButtonsEvents[i].pushButtonIndex == pushButtonIndex && (currentButtonMode & encoderPushButtonsEvents[i].buttonMode) == currentButtonMode) {
+      // Joy
+      Joysticks[encoderPushButtonsEvents[i].joyIndex].setButton(encoderPushButtonsEvents[i].buttonNumber, true);
+
+      //Midi
+      noteOn(encoderPushButtonsEvents[i].midiChannel, encoderPushButtonsEvents[i].midiPitch, 127);
+
+      encoderPushButtonsEvents[i].active = true;
+      encoderPushButtonsEvents[i].activation = (unsigned int)millis();
     }
   }
 }
@@ -425,34 +554,34 @@ void processLeds() {
 }
 
 void processPots() {
-  pot1value = analogRead(POT1_PIN);
-  pot2value = analogRead(POT2_PIN);
-  pot3value = analogRead(POT3_PIN);
-  pot4value = analogRead(POT4_PIN);
-  pot5value = analogRead(POT5_PIN);
-  pot6value =  analogRead(POT6_PIN);
-
-  axisXValue = pot1value;
-  axisYValue = currentPotMode == POT_MODE_ALL ? pot2value : pot4value;
-  axisZValue = currentPotMode == POT_MODE_ALL ? pot3value : pot2value;
-  axisRxValue = currentPotMode == POT_MODE_ALL ? pot4value : pot5value;
-  axisRyValue = currentPotMode == POT_MODE_ALL ? pot5value : pot3value;
-  axisRzValue = currentPotMode == POT_MODE_ALL ? pot6value : pot6value;
-
+  int axisXValue = analogRead(POT1_PIN);
+  int axisYValue = currentPotMode == POT_MODE_ALL ? analogRead(POT2_PIN) : analogRead(POT4_PIN);
+  int axisZValue = currentPotMode == POT_MODE_ALL ? analogRead(POT3_PIN) : analogRead(POT2_PIN);
+  int axisRxValue = currentPotMode == POT_MODE_ALL ? analogRead(POT4_PIN) : analogRead(POT5_PIN);
+  int axisRyValue = currentPotMode == POT_MODE_ALL ? analogRead(POT5_PIN) : analogRead(POT3_PIN);
+  int axisRzValue = analogRead(POT6_PIN);
 
   axisXLastValues[axisDebounceCounter] = axisXValue;
   axisYLastValues[axisDebounceCounter] = axisYValue;
   axisZLastValues[axisDebounceCounter] = axisZValue;
-  axisRxLastValues[axisDebounceCounter] = axisRxValue ;
+  axisRxLastValues[axisDebounceCounter] = axisRxValue;
   axisRyLastValues[axisDebounceCounter] = axisRyValue;
-  axisRzLastValues[axisDebounceCounter] = axisRzValue ;
+  axisRzLastValues[axisDebounceCounter] = axisRzValue;
 
   axisDebounceCounter++;
 
+  short midiValue;
   if (axisDebounceCounter == DEBOUNCE_ITERATIONS) {
     axisXValue = getAverage(axisXLastValues, DEBOUNCE_ITERATIONS);
     if (axisXValue != oldAxisXValue) {
-      Joystick1.setXAxis(axisXValue);
+      Joysticks[0].setXAxis(axisXValue);
+
+      short midiValue = map(axisXValue, 0, 1023, 0, 127);
+      if (midiValue != oldAxisXMidiValue) {
+        controlChange(10, 30, midiValue);
+
+        oldAxisXMidiValue = midiValue;
+      }
 
       oldAxisXValue = axisXValue;
 
@@ -460,31 +589,66 @@ void processPots() {
     }
     axisYValue = getAverage(axisYLastValues, DEBOUNCE_ITERATIONS);
     if (axisYValue != oldAxisYValue) {
-      Joystick1.setYAxis(axisYValue);
+      Joysticks[0].setYAxis(axisYValue);
+
+      midiValue = map(axisYValue, 0, 1023, 0, 127);
+      if (midiValue != oldAxisYMidiValue) {
+        controlChange(10, 31, midiValue);
+
+        oldAxisYMidiValue = midiValue;
+      }
 
       oldAxisYValue = axisYValue;
     }
     axisZValue = getAverage(axisZLastValues, DEBOUNCE_ITERATIONS);
     if (axisZValue != oldAxisZValue) {
-      Joystick1.setZAxis(axisZValue);
+      Joysticks[0].setZAxis(axisZValue);
+
+      midiValue = map(axisZValue, 0, 1023, 0, 127);
+      if (midiValue != oldAxisZMidiValue) {
+        controlChange(10, 32, midiValue);
+
+        oldAxisZMidiValue = midiValue;
+      }
 
       oldAxisZValue = axisZValue;
     }
     axisRxValue = getAverage(axisRxLastValues, DEBOUNCE_ITERATIONS);
     if (axisRxValue != oldAxisRxValue) {
-      Joystick1.setRxAxis(axisRxValue);
+      Joysticks[0].setRxAxis(axisRxValue);
+
+      midiValue = map(axisRxValue, 0, 1023, 0, 127);
+      if (midiValue != oldAxisRxMidiValue) {
+        controlChange(10, 33, midiValue);
+
+        oldAxisRxMidiValue = midiValue;
+      }
 
       oldAxisRxValue = axisRxValue;
     }
     axisRyValue = getAverage(axisRyLastValues, DEBOUNCE_ITERATIONS);
     if (axisRyValue != oldAxisRyValue) {
-      Joystick1.setRyAxis(axisRyValue);
+      Joysticks[0].setRyAxis(axisRyValue);
+
+      midiValue = map(axisRyValue, 0, 1023, 0, 127);
+      if (midiValue != oldAxisRyMidiValue) {
+        controlChange(10, 34, midiValue);
+
+        oldAxisRyMidiValue = midiValue;
+      }
 
       oldAxisRyValue = axisRyValue;
     }
     axisRzValue = getAverage(axisRzLastValues, DEBOUNCE_ITERATIONS);
     if (axisRzValue != oldAxisRzValue) {
-      Joystick1.setRzAxis(axisRzValue);
+      Joysticks[0].setRzAxis(axisRzValue);
+
+      midiValue = map(axisRzValue, 0, 1023, 0, 127);
+      if (midiValue != oldAxisRzMidiValue) {
+        controlChange(10, 35, midiValue);
+
+        oldAxisRzMidiValue = midiValue;
+      }
 
       oldAxisRzValue = axisRzValue;
     }
@@ -522,63 +686,150 @@ void processEncoder5() {
 }
 
 void processEncoderInterrupt(int index) {
-  state0 = digitalRead(encoders[index].pinA);
-  if (state0 != encoders[index].lastState) {
-    encoders[index].encCounter += (digitalRead(encoders[index].pinB) != encoders[index].lastState) ? -1 : 1;
+  pinAState = digitalRead(encoders[index].pinA);
+  if (pinAState != encoders[index].lastState) {
+    bool pinBState = digitalRead(encoders[index].pinB);
+    encoders[index].encCounter += (pinBState != pinAState) ? 1 : -1;
   }
 
-  encoders[index].lastState = state0;
+  encoders[index].lastState = pinAState;
 
   int diff = encoders[index].encCounter - encoders[index].lastCounter;
+
   if (diff == 2) {
+    processEncoderRotation(index, ROTATION_RIGHT);
+  } else if (diff == -2) {
+    processEncoderRotation(index, ROTATION_LEFT);
+  }
+
+  if (diff == 2 || diff == -2 || pinAState == HIGH) {
     encoders[index].lastCounter = encoders[index].encCounter = 0;
-    activateEncoderButton(encoders[index].rightButtonIndex);
-  } else if (diff == -2 ) {
-    encoders[index].lastCounter = encoders[index].encCounter = 0;
-    activateEncoderButton(encoders[index].leftButtonIndex);
   }
 }
 
-void activateEncoderButton(int index) {
-  if (encoderButtons[index].buttonMode == ENCODER_BUTTON_MODE_JOY_1_ONLY || currentButtonMode == BUTTON_MODE_1) {
-    if (!encoderButtons[index].joy1Active) {
-      Joystick1.setButton(encoderButtons[index].joy1Button, 1);
-      encoderButtons[index].joy1Active = true;
-      encoderButtons[index].joy1Activation = (unsigned int) millis();
-    }
-  } else if (currentButtonMode == BUTTON_MODE_2) {
-    if (!encoderButtons[index].joy2Active) {
-      Joystick2.setButton(encoderButtons[index].joy2Button, 1);
-      encoderButtons[index].joy2Active = true;
-      encoderButtons[index].joy2Activation = (unsigned int) millis();
+void processEncoderRotation(short encoderIndex, short rotation) {
+  for (int i = 0; i < ENCODER_ROTATION_JOY_0_BUTTONS_NUM + ENCODER_ROTATION_JOY_1_BUTTONS_NUM; i++) {
+    if (encoderRotationToJoyButtons[i].encoderIndex == encoderIndex && encoderRotationToJoyButtons[i].direction == rotation && encoderRotationToJoyButtons[i].pushButtonValue == encoderPushButtons[encoderIndex].active && (currentButtonMode & encoderRotationToJoyButtons[i].buttonMode) == currentButtonMode) {
+      if (!encoderRotationToJoyButtons[i].active) {
+        Joysticks[encoderRotationToJoyButtons[i].joyIndex].setButton(encoderRotationToJoyButtons[i].buttonNumber, 1);
+        encoderRotationToJoyButtons[i].active = true;
+        encoderRotationToJoyButtons[i].activation = (unsigned int)millis();
+      }
     }
   }
+
+  for (int i = 0; i < ENCODER_ROTATION_MIDI_COMMANDS_NUM; i++) {
+    if (encoderRotationToMidiCommands[i].encoderIndex == encoderIndex && encoderRotationToMidiCommands[i].pushButtonValue == encoderPushButtons[encoderIndex].active && (currentButtonMode & encoderRotationToMidiCommands[i].buttonMode) == currentButtonMode) {
+      controlChange(encoderRotationToMidiCommands[i].channel, encoderRotationToMidiCommands[i].control, calculateEncoderVelocity(encoderIndex, rotation));
+
+      MidiUSB.flush();
+
+      addEncoderHistoryValue(encoderIndex, rotation);
+    }
+  }
+
+  // if encoder was rotated push button should not be activated
+  encoderPushButtons[encoderIndex].activation = encoderPushButtons[encoderIndex].activation - ENCODER_PUSH_BUTTON_TIME_FOR_OUTPUT_SWITCH;
 }
 
 void deactivateEncoderButtons() {
-  for (int i = 0; i < 10; i++) {
-    if (encoderButtons[i].joy1Active && (unsigned int) millis() - encoderButtons[i].joy1Activation >= ENCODER_BUTTON_PRESS_TIME) {
-      Joystick1.setButton(encoderButtons[i].joy1Button, 0);
-      encoderButtons[i].joy1Active = false;
-    }
-    if (encoderButtons[i].joy2Active && (unsigned int) millis() - encoderButtons[i].joy2Activation >= ENCODER_BUTTON_PRESS_TIME) {
-      Joystick2.setButton(encoderButtons[i].joy2Button, 0);
-      encoderButtons[i].joy2Active = false;
+  for (int i = 0; i < ENCODER_ROTATION_JOY_0_BUTTONS_NUM + ENCODER_ROTATION_JOY_1_BUTTONS_NUM; i++) {
+    if (encoderRotationToJoyButtons[i].active && (unsigned int)millis() - encoderRotationToJoyButtons[i].activation >= ENCODER_BUTTON_PRESS_TIME) {
+      Joysticks[encoderRotationToJoyButtons[i].joyIndex].setButton(encoderRotationToJoyButtons[i].buttonNumber, 0);
+      encoderRotationToJoyButtons[i].active = false;
     }
   }
 }
 
-void deactivateEncoderSwitchButtons() {
-  for (int i = 0; i < JOY1_SWITCH_BUTTONS_NUM; i++) {
-    if (joy1SwitchButtons[i].active && (unsigned int) millis() - joy1SwitchButtons[i].activation >= SWITCH_BUTTON_PRESS_TIME) {
-      Joystick1.setButton(joy1SwitchButtons[i].logicalButtonNum, 0);
-      joy1SwitchButtons[i].active = false;
+void deactivateSwitchButtons() {
+  for (int i = 0; i < JOY0_SWITCH_BUTTONS_NUM + JOY1_SWITCH_BUTTONS_NUM; i++) {
+    if (twoWaySwitchEvents[i].active && (unsigned int)millis() - twoWaySwitchEvents[i].activation >= SWITCH_BUTTON_PRESS_TIME) {
+      Joysticks[twoWaySwitchEvents[i].joyIndex].setButton(twoWaySwitchEvents[i].buttonNumber, 0);
+
+      noteOff(twoWaySwitchEvents[i].midiChannel, twoWaySwitchEvents[i].midiPitch, 0);
+
+      twoWaySwitchEvents[i].active = false;
     }
   }
-  for (int i = 0; i < JOY2_SWITCH_BUTTONS_NUM; i++) {
-    if (joy2SwitchButtons[i].active && (unsigned int) millis() - joy2SwitchButtons[i].activation >= SWITCH_BUTTON_PRESS_TIME) {
-      Joystick2.setButton(joy2SwitchButtons[i].logicalButtonNum, 0);
-      joy2SwitchButtons[i].active = false;
+}
+
+void deactivateEncoderPushButtons() {
+  for (int i = 0; i < JOY0_ENCODER_PUSH_BUTTONS_NUM + JOY1_ENCODER_PUSH_BUTTONS_NUM; i++) {
+    if (encoderPushButtonsEvents[i].active && (unsigned int)millis() - encoderPushButtonsEvents[i].activation >= SWITCH_BUTTON_PRESS_TIME) {
+      Joysticks[encoderPushButtonsEvents[i].joyIndex].setButton(encoderPushButtonsEvents[i].buttonNumber, 0);
+
+      //Midi
+      noteOff(encoderPushButtonsEvents[i].midiChannel, encoderPushButtonsEvents[i].midiPitch, 0);
+
+      encoderPushButtonsEvents[i].active = false;
     }
   }
+}
+
+void addEncoderHistoryValue(short encoderIndex, short direction) {
+  if (encoderSpeedHistory[encoderIndex].size() == encoderSpeedHistory[encoderIndex].max_size()) {
+    encoderSpeedHistory[encoderIndex].remove(0);
+  }
+
+  encoderSpeedHistory[encoderIndex].push_back({ direction, millis() });
+}
+
+void cleanEncoderHistories() {
+  unsigned int now = millis();
+
+  for (short i = 0; i < ENCODERS_NUM; i++) {
+    for (short y = 0; y < encoderSpeedHistory[i].size(); y++) {
+      if (now - encoderSpeedHistory[i].at(y).timeTriggered <= ENCODER_SPEED_TIMEFRAME) {
+        break;
+      }
+
+      encoderSpeedHistory[i].remove(y);
+    }
+  }
+}
+
+short calculateEncoderVelocity(short encoderIndex, short direction) {
+  unsigned int now = millis();
+
+#ifdef DEBUG
+  Serial.print("Size ");
+  Serial.print(encoderSpeedHistory[encoderIndex].size());
+  Serial.print(" Clicks counter ");
+#endif
+
+  short clicksCounter = 0;
+  for (short i = encoderSpeedHistory[encoderIndex].size() - 1; i >= 0; i--) {
+    if (encoderSpeedHistory[encoderIndex].at(i).direction != direction) {
+      break;
+    }
+    if (now - encoderSpeedHistory[encoderIndex].at(i).timeTriggered > ENCODER_SPEED_TIMEFRAME) {
+      break;
+    }
+
+    clicksCounter++;
+  }
+
+#ifdef DEBUG
+  Serial.print(clicksCounter);
+  Serial.print(" Velocity ");
+  Serial.println(direction ? 65 + clicksCounter : 63 - clicksCounter);
+#endif
+
+  return direction ? 65 + clicksCounter : 63 - clicksCounter;
+}
+
+// Arduino MIDI functions MIDIUSB Library
+void noteOn(byte channel, byte pitch, byte velocity) {
+  midiEventPacket_t noteOn = { 0x09, 0x90 | channel, pitch, velocity };
+  MidiUSB.sendMIDI(noteOn);
+}
+
+void noteOff(byte channel, byte pitch, byte velocity) {
+  midiEventPacket_t noteOff = { 0x08, 0x80 | channel, pitch, velocity };
+  MidiUSB.sendMIDI(noteOff);
+}
+
+void controlChange(byte channel, byte control, byte value) {
+  midiEventPacket_t event = { 0x0B, 0xB0 | channel, control, value };
+  MidiUSB.sendMIDI(event);
 }
