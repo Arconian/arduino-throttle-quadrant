@@ -19,11 +19,11 @@
 #define TWO_POSITION_SWITCHES_NUM 3
 
 //// Encoder settings
-#define ENCODER_BUTTON_PRESS_TIME 27
+#define ENCODER_BUTTON_PRESS_TIME 28
 #define SWITCH_BUTTON_PRESS_TIME 50
 #define ENCODER_PUSH_BUTTON_TIME_FOR_OUTPUT_SWITCH 350
-const short ENCODER_SPEED_TIMEFRAME = 25;
-const short ENCODER_SPEED_VALUES_NUM = 6;
+const short ENCODER_SPEED_TIMEFRAME = 16;
+const short ENCODER_SPEED_VALUES_NUM = 2;
 
 //// Pins
 #define PLOAD_PIN 13         // Connects to Parallel load pin the 165
@@ -303,6 +303,12 @@ int oldAxisZValue = -1;
 int oldAxisRxValue = -1;
 int oldAxisRyValue = -1;
 int oldAxisRzValue = -1;
+short oldAxisXMidiValue = -1;
+short oldAxisYMidiValue = -1;
+short oldAxisZMidiValue = -1;
+short oldAxisRxMidiValue = -1;
+short oldAxisRyMidiValue = -1;
+short oldAxisRzMidiValue = -1;
 
 int axisDebounceCounter = 0;
 int axisXLastValues[DEBOUNCE_ITERATIONS];
@@ -568,12 +574,18 @@ void processPots() {
 
   axisDebounceCounter++;
 
+  short midiValue;
   if (axisDebounceCounter == DEBOUNCE_ITERATIONS) {
     axisXValue = getAverage(axisXLastValues, DEBOUNCE_ITERATIONS);
     if (axisXValue != oldAxisXValue) {
       Joysticks[0].setXAxis(axisXValue);
 
-      controlChange(10, 30, map(axisXValue, 0, 1023, 0, 127));
+      short midiValue = map(axisXValue, 0, 1023, 0, 127);
+      if (midiValue != oldAxisXMidiValue) {
+        controlChange(10, 30, midiValue);
+
+        oldAxisXMidiValue = midiValue;
+      }
 
       oldAxisXValue = axisXValue;
 
@@ -583,7 +595,12 @@ void processPots() {
     if (axisYValue != oldAxisYValue) {
       Joysticks[0].setYAxis(axisYValue);
 
-      controlChange(10, 31, map(axisYValue, 0, 1023, 0, 127));
+      midiValue = map(axisYValue, 0, 1023, 0, 127);
+      if (midiValue != oldAxisYMidiValue) {
+        controlChange(10, 31, midiValue);
+
+        oldAxisYMidiValue = midiValue;
+      }
 
       oldAxisYValue = axisYValue;
     }
@@ -591,7 +608,12 @@ void processPots() {
     if (axisZValue != oldAxisZValue) {
       Joysticks[0].setZAxis(axisZValue);
 
-      controlChange(10, 32, map(axisZValue, 0, 1023, 0, 127));
+      midiValue = map(axisZValue, 0, 1023, 0, 127);
+      if (midiValue != oldAxisZMidiValue) {
+        controlChange(10, 32, midiValue);
+
+        oldAxisZMidiValue = midiValue;
+      }
 
       oldAxisZValue = axisZValue;
     }
@@ -599,7 +621,12 @@ void processPots() {
     if (axisRxValue != oldAxisRxValue) {
       Joysticks[0].setRxAxis(axisRxValue);
 
-      controlChange(10, 33, map(axisRxValue, 0, 1023, 0, 127));
+      midiValue = map(axisRxValue, 0, 1023, 0, 127);
+      if (midiValue != oldAxisRxMidiValue) {
+        controlChange(10, 33, midiValue);
+
+        oldAxisRxMidiValue = midiValue;
+      }
 
       oldAxisRxValue = axisRxValue;
     }
@@ -607,7 +634,12 @@ void processPots() {
     if (axisRyValue != oldAxisRyValue) {
       Joysticks[0].setRyAxis(axisRyValue);
 
-      controlChange(10, 34, map(axisRyValue, 0, 1023, 0, 127));
+      midiValue = map(axisRyValue, 0, 1023, 0, 127);
+      if (midiValue != oldAxisRyMidiValue) {
+        controlChange(10, 34, midiValue);
+
+        oldAxisRyMidiValue = midiValue;
+      }
 
       oldAxisRyValue = axisRyValue;
     }
@@ -615,7 +647,12 @@ void processPots() {
     if (axisRzValue != oldAxisRzValue) {
       Joysticks[0].setRzAxis(axisRzValue);
 
-      controlChange(10, 35, map(axisRzValue, 0, 1023, 0, 127));
+      midiValue = map(axisRzValue, 0, 1023, 0, 127);
+      if (midiValue != oldAxisRzMidiValue) {
+        controlChange(10, 35, midiValue);
+
+        oldAxisRzMidiValue = midiValue;
+      }
 
       oldAxisRzValue = axisRzValue;
     }
@@ -694,6 +731,9 @@ void processEncoderRotation(short encoderIndex, short rotation) {
       addEncoderHistoryValue(encoderIndex, rotation);
     }
   }
+
+  // if encoder was rotated push button should not be activated
+  encoderPushButtons[encoderIndex].activation = encoderPushButtons[encoderIndex].activation - ENCODER_PUSH_BUTTON_TIME_FOR_OUTPUT_SWITCH;
 }
 
 void deactivateEncoderButtons() {
@@ -755,6 +795,12 @@ void cleanEncoderHistories() {
 short calculateEncoderVelocity(short encoderIndex, short direction) {
   unsigned int now = millis();
 
+#ifdef DEBUG
+  Serial.print("Size ");
+  Serial.print(encoderSpeedHistory[encoderIndex].size());
+  Serial.print(" Clicks counter ");
+#endif
+
   short clicksCounter = 0;
   for (short i = encoderSpeedHistory[encoderIndex].size() - 1; i >= 0; i--) {
     if (encoderSpeedHistory[encoderIndex].at(i).direction != direction) {
@@ -767,7 +813,13 @@ short calculateEncoderVelocity(short encoderIndex, short direction) {
     clicksCounter++;
   }
 
-  return direction ? 65 + clicksCounter * 2 : 63 - clicksCounter * 2;
+#ifdef DEBUG
+  Serial.print(clicksCounter);
+  Serial.print(" Velocity ");
+  Serial.println(direction ? 65 + clicksCounter : 63 - clicksCounter);
+#endif
+
+  return direction ? 65 + clicksCounter : 63 - clicksCounter;
 }
 
 // Arduino MIDI functions MIDIUSB Library
