@@ -1,7 +1,3 @@
-/////////////////////
-//// Version 2.0-alpha ////
-/////////////////////
-
 #include <Joystick.h>
 #include <MIDIUSB.h>
 #include <Vector.h>
