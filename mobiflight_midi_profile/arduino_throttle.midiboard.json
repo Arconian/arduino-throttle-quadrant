@@ -69,7 +69,7 @@
     },
     {
       "Label": "Slider %",
-      "LabelIds": [ "Throttle 1", "Throttle 2", "Prop 1", "Prop 2", "Mixture 1", "Mixture 2",  ],
+      "LabelIds": [ "Throttle 1", "Throttle 2", "Prop 1", "Prop 2", "Mixture 1", "Mixture 2"],
       "InputType": "Fader",
       "MessageType": "CC",
       "MessageChannel": 11,
