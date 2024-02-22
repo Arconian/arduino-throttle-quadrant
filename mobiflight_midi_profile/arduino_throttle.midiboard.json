@@ -1,0 +1,79 @@
+{
+  "$schema": "./mfmidiboard.schema.json",
+  "InstanceName": "Arduino Throttle",
+  "EncoderNeutralPosition": 64,
+  "InitialLayer": "Blue",
+  "Inputs": [
+    {
+      "Label": "Two Way Switch % ",
+      "LabelIds": [ "1 Up", "1 Down", "2 Up", "2 Down", "3 Up", "3 Down" ],
+      "Layer": "A",
+      "InputType": "Button",
+      "MessageType": "Note",
+      "MessageChannel": 11,
+      "MessageIds": [ 0, 1, 2, 3, 4, 5 ]
+    },
+    {
+      "Label": "Button % - Layer Blue",
+      "LabelIds": [ "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"  ],
+      "Layer": "Blue",
+      "InputType": "Button",
+      "MessageType": "Note",
+      "MessageChannel": 11,
+      "MessageIds": [ 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19 ]
+    },
+    {
+      "Label": "Button % - Layer Green",
+      "LabelIds": [ "1", "2", "3", "4", "5", "6", "7", "8" ],
+      "Layer": "Green",
+      "InputType": "Button",
+      "MessageType": "Note",
+      "MessageChannel": 11,
+      "MessageIds": [ 20, 21, 22, 23, 33, 34, 35, 36 ]
+    },
+    {
+      "Label": "Encoder % Push Button - Layer Blue",
+      "LabelIds": [ "1", "2", "3", "4", "5" ],
+      "Layer": "Blue",
+      "InputType": "Button",
+      "MessageType": "Note",
+      "MessageChannel": 11,
+      "MessageIds": [ 24, 25, 26, 27, 28 ]
+    },
+    {
+      "Label": "Encoder % Push Button - Layer Green",
+      "LabelIds": [ "2", "3", "4", "5" ],
+      "Layer": "Green",
+      "InputType": "Button",
+      "MessageType": "Note",
+      "MessageChannel": 11,
+      "MessageIds": [ 29, 30, 31, 32 ]
+    },
+    {
+      "Label": "Encoder % - Layer Blue",
+      "LabelIds": [ "1", "1 Pushed", "2", "2 Pushed", "3", "3 Pushed", "4", "4 Pushed", "5", "5 Pushed" ],
+      "Layer": "Blue",
+      "InputType": "EndlessKnob",
+      "MessageType": "CC",
+      "MessageChannel": 11,
+      "MessageIds": [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ]
+    },
+    {
+      "Label": "Encoder % - Layer Green",
+      "LabelIds": [ "2", "2 Pushed", "3", "3 Pushed", "4", "4 Pushed", "5", "5 Pushed" ],
+      "Layer": "Green",
+      "InputType": "EndlessKnob",
+      "MessageType": "CC",
+      "MessageChannel": 11,
+      "MessageIds": [ 10, 11, 12, 13, 14, 15, 16, 17 ]
+    },
+    {
+      "Label": "Slider %",
+      "LabelIds": [ "Throttle 1", "Throttle 2", "Prop 1", "Prop 2", "Mixture 1", "Mixture 2",  ],
+      "InputType": "Fader",
+      "MessageType": "CC",
+      "MessageChannel": 11,
+      "MessageIds": [ 30, 31, 32, 33, 34, 35 ]
+    }
+  ]
+}

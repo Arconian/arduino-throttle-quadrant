@@ -134,19 +134,19 @@ struct Button {
   bool previousState;
 };
 
-#define JOY0_BUTTONS_NUM 18
+#define JOY0_BUTTONS_NUM 22
 #define JOY1_BUTTONS_NUM 0
 Button buttonEvents[JOY0_BUTTONS_NUM + JOY1_BUTTONS_NUM] = {
   { 2, BUTTON_MODE_BOTH, JOY_0, 6, 10, 6 },
   { 3, BUTTON_MODE_BOTH, JOY_0, 7, 10, 7 },
   { 0, BUTTON_MODE_BOTH, JOY_0, 8, 10, 8 },
   { 1, BUTTON_MODE_BOTH, JOY_0, 9, 10, 9 },
-  { 4, BUTTON_MODE_BOTH, JOY_0, 10, 10, 10 },
-  { 5, BUTTON_MODE_BOTH, JOY_0, 11, 10, 11 },
+  { 4, BUTTON_MODE_1, JOY_0, 10, 10, 10 },
+  { 5, BUTTON_MODE_1, JOY_0, 11, 10, 11 },
   { 12, BUTTON_MODE_1, JOY_0, 12, 10, 12 },
-  { 14, BUTTON_MODE_BOTH, JOY_0, 13, 10, 13 },
+  { 14, BUTTON_MODE_1, JOY_0, 13, 10, 13 },
   { 13, BUTTON_MODE_1, JOY_0, 14, 10, 14 },
-  { 15, BUTTON_MODE_BOTH, JOY_0, 15, 10, 15 },
+  { 15, BUTTON_MODE_1, JOY_0, 15, 10, 15 },
   { 19, BUTTON_MODE_1, JOY_0, 16, 10, 16 },
   { 18, BUTTON_MODE_1, JOY_0, 17, 10, 17 },
   { 23, BUTTON_MODE_BOTH, JOY_0, 18, 10, 18 },
@@ -155,6 +155,10 @@ Button buttonEvents[JOY0_BUTTONS_NUM + JOY1_BUTTONS_NUM] = {
   { 13, BUTTON_MODE_2, JOY_0, 21, 10, 21 },
   { 19, BUTTON_MODE_2, JOY_0, 22, 10, 22 },
   { 18, BUTTON_MODE_2, JOY_0, 23, 10, 23 },
+  { 14, BUTTON_MODE_2, JOY_0, 35, 10, 33 },
+  { 15, BUTTON_MODE_2, JOY_0, 36, 10, 34 },
+  { 4, BUTTON_MODE_2, JOY_0, 33, 10, 35 },
+  { 5, BUTTON_MODE_2, JOY_0, 34, 10, 36 },
 };
 
 struct TwoWaySwitchButton {
@@ -591,7 +595,7 @@ void processPots() {
     if (axisYValue != oldAxisYValue) {
       Joysticks[0].setYAxis(axisYValue);
 
-      midiValue = map(axisYValue, 0, 1023, 0, 127);
+      short midiValue = map(axisYValue, 0, 1023, 0, 127);
       if (midiValue != oldAxisYMidiValue) {
         controlChange(10, 31, midiValue);
 
@@ -604,7 +608,7 @@ void processPots() {
     if (axisZValue != oldAxisZValue) {
       Joysticks[0].setZAxis(axisZValue);
 
-      midiValue = map(axisZValue, 0, 1023, 0, 127);
+      short midiValue = map(axisZValue, 0, 1023, 0, 127);
       if (midiValue != oldAxisZMidiValue) {
         controlChange(10, 32, midiValue);
 
@@ -617,7 +621,7 @@ void processPots() {
     if (axisRxValue != oldAxisRxValue) {
       Joysticks[0].setRxAxis(axisRxValue);
 
-      midiValue = map(axisRxValue, 0, 1023, 0, 127);
+      short midiValue = map(axisRxValue, 0, 1023, 0, 127);
       if (midiValue != oldAxisRxMidiValue) {
         controlChange(10, 33, midiValue);
 
@@ -630,7 +634,7 @@ void processPots() {
     if (axisRyValue != oldAxisRyValue) {
       Joysticks[0].setRyAxis(axisRyValue);
 
-      midiValue = map(axisRyValue, 0, 1023, 0, 127);
+      short midiValue = map(axisRyValue, 0, 1023, 0, 127);
       if (midiValue != oldAxisRyMidiValue) {
         controlChange(10, 34, midiValue);
 
@@ -643,7 +647,7 @@ void processPots() {
     if (axisRzValue != oldAxisRzValue) {
       Joysticks[0].setRzAxis(axisRzValue);
 
-      midiValue = map(axisRzValue, 0, 1023, 0, 127);
+      short midiValue = map(axisRzValue, 0, 1023, 0, 127);
       if (midiValue != oldAxisRzMidiValue) {
         controlChange(10, 35, midiValue);
 
